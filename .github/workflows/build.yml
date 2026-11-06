@@ -37,7 +37,8 @@ jobs:
 
       - name: Run native tests
         run: |
-          ctest --test-dir build/native -C Release --output-on-failure
+          # Exclude tests requiring physical Vulkan GPU hardware or an interactive desktop display
+          ctest --test-dir build/native -C Release --output-on-failure -E "sfs-multiview-gpu|hand-scene-depth-gpu|native-depth-seed-gpu|fsr1-gpu-current-eyes|vr-cube-intro"
 
       - name: Restore Launcher
         run: |

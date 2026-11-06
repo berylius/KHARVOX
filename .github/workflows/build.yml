@@ -1,0 +1,66 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - main
+      - berylius-wine-proton-compatibility
+  pull_request:
+    branches:
+      - main
+      - berylius-wine-proton-compatibility
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Test (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build/native -A x64 -DKHARVOX_BUILD_LAYER=ON -DBUILD_TESTING=ON
+
+      - name: Build native layer and bridges
+        run: |
+          cmake --build build/native --config Release --parallel
+
+      - name: Run native tests
+        run: |
+          ctest --test-dir build/native -C Release --output-on-failure
+
+      - name: Restore Launcher
+        run: |
+          dotnet restore launcher/KharvoxLauncher/KharvoxLauncher.csproj
+
+      - name: Build Launcher
+        run: |
+          dotnet build launcher/KharvoxLauncher/KharvoxLauncher.csproj --configuration Release --no-restore
+
+      - name: Stage build artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path staging -Force
+          Copy-Item -Path build/native/Release/KharvoxLayer.dll -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item -Path build/native/Release/KharvoxLayer.pdb -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item -Path build/native/Release/KharvoxPsvr2Bridge.exe -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item -Path build/native/Release/psvr2_toolkit_capi_loader.dll -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item -Path build/native/Release/offhand_hud_default.cfg -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item -Path launcher/KharvoxLauncher/bin/Release/net48/KharvoxLauncher.exe -Destination staging/ -ErrorAction SilentlyContinue
+          Copy-Item -Path config -Destination staging/config -Recurse -ErrorAction SilentlyContinue
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: kharvox-windows-x64
+          path: staging/

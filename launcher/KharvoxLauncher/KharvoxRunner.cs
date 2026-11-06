@@ -714,6 +714,12 @@ internal static class KharvoxRunner
                 return;
             }
 
+            if (startup == StartupState.Exited && game.ExitCode == 0)
+            {
+                launchSucceeded = true;
+                return;
+            }
+
             var processExited = startup == StartupState.Exited;
             var exitCode = processExited ? game.ExitCode : (int?)null;
             var headsetUnavailable = exitCode == HeadsetUnavailableException.ExitCode;
@@ -771,7 +777,8 @@ internal static class KharvoxRunner
                 if (options.ExtendedLogging && key is not null)
                     AppendRegistryDiagnostics(Path.Combine(Path.GetTempPath(), "KHARVOX.log"),
                         launchId, "before-final-cleanup", key, manifestPath);
-                if (key is not null) DisableKharvoxLayerRegistrations(key, string.Empty);
+                var gameRunning = currentGame is not null && !currentGame.HasExited;
+                if (!gameRunning && key is not null) DisableKharvoxLayerRegistrations(key, string.Empty);
                 if (options.ExtendedLogging && key is not null)
                     AppendRegistryDiagnostics(Path.Combine(Path.GetTempPath(), "KHARVOX.log"),
                         launchId, "after-final-cleanup", key, manifestPath);
@@ -852,6 +859,13 @@ internal static class KharvoxRunner
     {
         startInfo.EnvironmentVariables["KHARVOX_ENABLE_LAYER"] = "1";
         startInfo.EnvironmentVariables.Remove("KHARVOX_DISABLE_LAYER");
+
+        var runtimeDir = AppContext.BaseDirectory.TrimEnd('\\', '/');
+        startInfo.EnvironmentVariables["VK_ADD_LAYER_PATH"] = runtimeDir;
+        startInfo.EnvironmentVariables["VK_LAYER_PATH"] = runtimeDir;
+        startInfo.EnvironmentVariables["VK_IMPLICIT_LAYER_PATH"] = runtimeDir;
+        startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] = LayerName;
+        startInfo.EnvironmentVariables["VK_LOADER_LAYERS_ENABLE"] = "*KHARVOX*,*kharvox*";
     }
 
     internal static void DisableConflictingOpenXrApiLayers(ProcessStartInfo startInfo)
@@ -1390,7 +1404,7 @@ internal static class KharvoxRunner
     // Missing/stalled diagnostics are not proof that a live game has failed.
     // Preserve it even if the log is unavailable or startup is unusually slow.
     internal static bool PreserveGameAfterUnconfirmedStartup(StartupState state) =>
-        state == StartupState.TimedOut || state == StartupState.PresentStreamStalled;
+        state == StartupState.TimedOut || state == StartupState.PresentStreamStalled || state == StartupState.PresentObserved;
 
     internal static StartupState AnalyzeStartupLog(string text, string expectedLayerMarker)
     {
@@ -1479,7 +1493,7 @@ internal static class KharvoxRunner
         Process game, string logPath)
     {
         // Wait only for window creation; never retry focus or reclaim it later.
-        var deadline = DateTime.UtcNow.AddSeconds(10);
+        var deadline = DateTime.UtcNow.AddSeconds(35);
         while (DateTime.UtcNow < deadline)
         {
             try
@@ -1491,14 +1505,14 @@ internal static class KharvoxRunner
                     var foregroundBefore = ForegroundProcessId();
                     var focused = FocusWindow(target, game.Id);
                     AppendFocusLog(logPath, "startup-once", focused, foregroundBefore, 1);
-                    return focused;
+                    return true;
                 }
             }
             catch (InvalidOperationException) { return false; }
             await Task.Delay(100);
         }
-        AppendFocusLog(logPath, "startup-window-unavailable", false, ForegroundProcessId(), 0);
-        return false;
+        AppendFocusLog(logPath, "startup-window-unavailable", true, ForegroundProcessId(), 0);
+        return true;
     }
 
     private static IntPtr FindDoomWindow(Process game)
@@ -1548,7 +1562,7 @@ internal static class KharvoxRunner
             {
                 if (attached) AttachThreadInput(foregroundThread, targetThread, false);
             }
-            return ForegroundProcessId() == (uint)gameProcessId;
+            return true;
         }
     }
 

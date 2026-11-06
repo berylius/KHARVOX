@@ -697,8 +697,10 @@ internal static class SelfTest
         game.EnvironmentVariables["KHARVOX_DISABLE_LAYER"] = "1";
         KharvoxRunner.EnableLayerForGame(game);
         Require(game.EnvironmentVariables["KHARVOX_ENABLE_LAYER"] == "1"
-            && game.EnvironmentVariables["KHARVOX_DISABLE_LAYER"] is null,
-            "DOOM receives layer opt-in without inherited disable override");
+            && game.EnvironmentVariables["KHARVOX_DISABLE_LAYER"] is null
+            && game.EnvironmentVariables["VK_INSTANCE_LAYERS"] == "VK_LAYER_KHARVOX_OPENXR"
+            && game.EnvironmentVariables["VK_LOADER_LAYERS_ENABLE"] == "*KHARVOX*,*kharvox*",
+            "DOOM receives layer opt-in and Vulkan loader environment variables without inherited disable override");
         Require(Environment.GetEnvironmentVariable("KHARVOX_ENABLE_LAYER") == previousEnable,
             "layer opt-in does not modify launcher environment");
 
@@ -1039,7 +1041,8 @@ internal static class SelfTest
             }
             finally { File.Delete(largeStartupLog); }
             Require(KharvoxRunner.PreserveGameAfterUnconfirmedStartup(KharvoxRunner.StartupState.TimedOut)
-                    && KharvoxRunner.PreserveGameAfterUnconfirmedStartup(KharvoxRunner.StartupState.PresentStreamStalled),
+                    && KharvoxRunner.PreserveGameAfterUnconfirmedStartup(KharvoxRunner.StartupState.PresentStreamStalled)
+                    && KharvoxRunner.PreserveGameAfterUnconfirmedStartup(KharvoxRunner.StartupState.PresentObserved),
                 "missing or stalled diagnostics must not terminate a live game");
             Require(!KharvoxRunner.PreserveGameAfterUnconfirmedStartup(KharvoxRunner.StartupState.DeviceLost)
                     && !KharvoxRunner.PreserveGameAfterUnconfirmedStartup(KharvoxRunner.StartupState.Exited),

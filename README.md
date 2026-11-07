@@ -209,13 +209,25 @@ If you enjoy KHARVOX, you can support its development on Ko-fi. Thank you!
 - Visual Studio with **Desktop development with C++** and a Windows SDK
 - .NET SDK with the .NET Framework 4.8 targeting pack
 
-Wine/Proton support is experimental. Wine's built-in `vulkan-1.dll` can bypass
-Windows Vulkan layer discovery, so registering KHARVOX's implicit layer does
-not by itself make injection work. A Windows Vulkan loader and a compatible
-Wine Vulkan ICD bridge would be needed; they are not currently bundled or
-validated by KHARVOX. For diagnosis, enable extended logging and inspect
-`KHARVOX.log` and `KHARVOX-vulkan-loader-v1.0.log` in the Windows `%TEMP%`
-directory. A focused DOOM window does not confirm that the layer loaded.
+Wine/Proton support is experimental and has not been validated with a real
+DOOM/VR session. The build supplies a patched Windows Vulkan loader in
+`wine-loader/`; under Wine the launcher temporarily places it next to DOOM and
+routes it through Wine's Vulkan ICD, so the Windows KHARVOX layer can be
+discovered. It never replaces an existing `vulkan-1.dll` there. An independent
+helper removes its own unchanged loader after DOOM exits; if interrupted, the
+next launch recovers it only when its ownership marker and hash match. A
+changed loader is preserved and must be inspected manually. Do not remove the
+marker while the temporary loader is present.
+
+For diagnosis, enable extended logging and inspect `KHARVOX.log` and
+`KHARVOX-vulkan-loader-v1.0.log` in the Windows `%TEMP%` directory. A focused
+DOOM window or layer registration alone does not confirm that the layer loaded.
+The loader uses Wine's `winevulkan.dll` and is not used on native Windows.
+
+To build the Wine loader separately on Windows, run
+`tools/wine_loader/build.ps1 -WorkDirectory build/wine-loader -OutputDirectory staging/wine-loader`.
+Pass the output directory as `-WineLoaderOutput` to
+`tools/package_release_1_4a.ps1` when creating a release.
 
 Clone the repository and its optional PSVR2 Toolkit source link:
 

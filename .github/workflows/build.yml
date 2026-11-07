@@ -35,6 +35,9 @@ jobs:
             if (Test-Path $log) { Get-Content $log }
             throw "Launcher self-test failed: $($test.ExitCode)"
           }
+      - name: Build Wine Vulkan loader
+        shell: pwsh
+        run: ./tools/wine_loader/build.ps1 -WorkDirectory build/wine-loader -OutputDirectory staging/wine-loader
       - name: Stage build artifacts
         shell: pwsh
         run: |

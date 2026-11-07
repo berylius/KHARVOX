@@ -2,6 +2,7 @@ param(
     [Parameter(Mandatory=$true)][string]$BaselineArchive,
     [Parameter(Mandatory=$true)][string]$NativeOutput,
     [Parameter(Mandatory=$true)][string]$LauncherOutput,
+    [Parameter(Mandatory=$true)][string]$WineLoaderOutput,
     [Parameter(Mandatory=$true)][string]$OutputRoot
 )
 $ErrorActionPreference='Stop'
@@ -16,6 +17,12 @@ foreach($name in @('KharvoxLayer.dll','native_sfs_build.txt')){
 }
 foreach($name in @('KharvoxLauncher.exe','KharvoxLauncher.exe.config')){
     Copy-Item -LiteralPath (Join-Path $LauncherOutput $name) -Destination $package
+}
+$winePackage=Join-Path $package 'wine-loader'
+if(Test-Path -LiteralPath $winePackage){throw 'Baseline archive already contains wine-loader; refusing to overwrite it'}
+New-Item -ItemType Directory -Path $winePackage | Out-Null
+foreach($name in @('vulkan-1.dll','Vulkan-Loader-LICENSE.txt','Wine-patch-LICENSE.txt','khronos-wine.patch')){
+    Copy-Item -LiteralPath (Join-Path $WineLoaderOutput $name) -Destination $winePackage
 }
 Copy-Item -LiteralPath "$source/src/vulkan/KharvoxLayer.json" -Destination $package
 foreach($name in @('KharvoxLayer.dll','KharvoxLauncher.exe')){

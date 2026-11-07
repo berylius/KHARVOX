@@ -7,6 +7,7 @@ internal static class Program
     {
         if (args.Length > 0 && args[0] == "--vr-intro") return VrIntroHost.Run(args.Skip(1).ToArray());
         if (args.Length == 1 && args[0] == "--self-test-layer") return SelfTest.RunLayerIsolation();
+        if (args.Length > 0 && args[0] == "--wine-loader-cleanup") return WineVulkanLoader.RunCleanup(args);
 
         if (args.Length == 2 && args[0] == "--verify-game")
         {

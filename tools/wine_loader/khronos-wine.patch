@@ -1,0 +1,36 @@
+diff --git a/loader/loader.c b/loader/loader.c
+index 53c8be0..723bd52 100644
+--- a/loader/loader.c
++++ b/loader/loader.c
+@@ -3612,0 +3613,12 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
++#if defined(_WIN32)
++    // KHARVOX uses a private Windows loader in Wine, whose host loader must
++    // not inherit Windows VK_* path overrides.
++    const char *kharvox_var = manifest_type == LOADER_DATA_FILE_MANIFEST_DRIVER ? "KHARVOX_WINE_ICD" :
++        manifest_type == LOADER_DATA_FILE_MANIFEST_IMPLICIT_LAYER ? "KHARVOX_WINE_LAYERS" : NULL;
++    char *kharvox_override = kharvox_var ? loader_getenv(kharvox_var, inst) : NULL;
++    if (kharvox_override != NULL) {
++        loader_free_getenv(override_env, inst);
++        override_env = kharvox_override;
++        path_overrides = NULL;
++    }
++#endif
+diff --git a/loader/loader_windows.c b/loader/loader_windows.c
+index 1701818..2187278 100644
+--- a/loader/loader_windows.c
++++ b/loader/loader_windows.c
+@@ -64,0 +65,5 @@ PFN_CreateDXGIFactory1 fpCreateDXGIFactory1;
++static HRESULT __stdcall nr_no_dxgi_factory(REFIID riid, void **ppFactory) {
++    (void)riid;
++    if (ppFactory) *ppFactory = NULL;
++    return E_FAIL;
++}
+@@ -84,6 +89,2 @@ void windows_initialization(void) {
+-    wchar_t systemPath[MAX_PATH] = L"";
+-    GetSystemDirectoryW(systemPath, MAX_PATH);
+-    StringCchCatW(systemPath, MAX_PATH, L"\\dxgi.dll");
+-    HMODULE dxgi_module = LoadLibraryW(systemPath);
+-    fpCreateDXGIFactory1 =
+-        dxgi_module == NULL ? NULL : (PFN_CreateDXGIFactory1)(void *)GetProcAddress(dxgi_module, "CreateDXGIFactory1");
++    // DXVK's DXGI may recursively create a Vulkan instance under Proton.
++    fpCreateDXGIFactory1 = nr_no_dxgi_factory;

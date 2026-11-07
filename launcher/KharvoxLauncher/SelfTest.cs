@@ -11,6 +11,7 @@ internal static class SelfTest
         {
             Directory.CreateDirectory(testRoot);
             TestLayerIsolation(testRoot);
+            TestWineLoader(testRoot);
             return 0;
         }
         catch (Exception error)
@@ -761,6 +762,82 @@ internal static class SelfTest
                 "exit disables KHARVOX registration without changing other layers");
         }
         finally { hive.DeleteSubKeyTree(testKey, false); }
+    }
+
+    private static void TestWineLoader(string directory)
+    {
+        var root = Path.Combine(directory, "wine test");
+        var gameDirectory = Path.Combine(root, "game");
+        var runtime = Path.Combine(root, "runtime");
+        var package = Path.Combine(runtime, "wine-loader");
+        Directory.CreateDirectory(gameDirectory);
+        Directory.CreateDirectory(package);
+        var source = Path.Combine(package, "vulkan-1.dll");
+        var destination = Path.Combine(gameDirectory, "vulkan-1.dll");
+        var marker = Path.Combine(gameDirectory, ".kharvox-wine-loader");
+        var log = Path.Combine(root, "test.log");
+        File.WriteAllText(source, "packaged loader");
+        File.WriteAllText(destination, "existing user loader");
+        try
+        {
+            WineVulkanLoader.Prepare(gameDirectory, runtime, log);
+            throw new InvalidOperationException("Existing Wine loader should be rejected.");
+        }
+        catch (InvalidOperationException error)
+        {
+            Require(error.Message.Contains("already has a vulkan-1.dll"), "existing loader is rejected");
+        }
+        Require(File.ReadAllText(destination) == "existing user loader" && !File.Exists(marker),
+            "existing loader is preserved");
+        File.Delete(destination);
+
+        var previousOverride = Environment.GetEnvironmentVariable("WINEDLLOVERRIDES");
+        using (var lease = WineVulkanLoader.Prepare(gameDirectory, runtime, log))
+        {
+            var startInfo = new System.Diagnostics.ProcessStartInfo();
+            startInfo.EnvironmentVariables["WINEDLLOVERRIDES"] = "foo,vulkan-1=b;bar=n;VULKAN-1=b";
+            lease.Configure(startInfo, runtime);
+            Require(startInfo.EnvironmentVariables["WINEDLLOVERRIDES"] == "foo=b;bar=n;vulkan-1=n",
+                "Wine overrides preserve unrelated DLLs and replace existing Vulkan entries");
+            Require(Environment.GetEnvironmentVariable("WINEDLLOVERRIDES") == previousOverride,
+                "Wine override is child-only");
+            Require(File.Exists(startInfo.EnvironmentVariables["KHARVOX_WINE_ICD"]!)
+                && startInfo.EnvironmentVariables["KHARVOX_WINE_LAYERS"] == runtime,
+                "Wine ICD and layer paths are configured");
+            Require(File.Exists(destination) && File.Exists(marker), "Wine loader is staged with ownership marker");
+        }
+        Require(!File.Exists(destination) && !File.Exists(marker), "untransferred Wine loader is removed");
+
+        var stale = WineVulkanLoader.Prepare(gameDirectory, runtime, log);
+        stale.PreserveForRecovery();
+        File.WriteAllText(destination, "changed by user");
+        try
+        {
+            WineVulkanLoader.Recover(gameDirectory, log);
+            throw new InvalidOperationException("Changed Wine loader should be preserved.");
+        }
+        catch (InvalidOperationException error)
+        {
+            Require(error.Message.Contains("changed"), "modified loader recovery is refused");
+        }
+        Require(File.ReadAllText(destination) == "changed by user" && File.Exists(marker),
+            "modified loader and marker are preserved");
+        File.WriteAllText(destination, "packaged loader");
+        WineVulkanLoader.Recover(gameDirectory, log);
+        Require(!File.Exists(destination) && !File.Exists(marker), "unchanged stale loader is recovered");
+
+        using (var lease = WineVulkanLoader.Prepare(gameDirectory + Path.DirectorySeparatorChar, runtime, log))
+        using (var child = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(
+            Path.Combine(Environment.SystemDirectory, "cmd.exe"), "/d /c ping -n 3 127.0.0.1 >nul")
+            { UseShellExecute = false, CreateNoWindow = true })!)
+        {
+            lease.StartCleanupHelper(child);
+            child.WaitForExit();
+        }
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (File.Exists(marker) && DateTime.UtcNow < deadline) Thread.Sleep(100);
+        Require(!File.Exists(destination) && !File.Exists(marker),
+            "independent helper removes loader after child exit");
     }
 
     private static void TestNativeLaunchRecovery(string directory)

@@ -592,8 +592,6 @@ internal static class KharvoxRunner
                 + "\" dll=\"" + dllPath + "\" registryEnabled=" + RegistryValueMatches(key, manifestPath)
                 + " childOptIn=" + psi.EnvironmentVariables["KHARVOX_ENABLE_LAYER"]
                 + " wine=" + wine + " loaderCapture=" + options.ExtendedLogging);
-            if (wine)
-                AppendLauncherLog(logPath, "Wine detected: its built-in vulkan-1.dll may bypass Windows Vulkan layer discovery; a registered manifest alone does not confirm injection.");
             if (nativeValidationLog is not null)
                 File.AppendAllText(logPath, "[KHARVOX][LAUNCHER] Native Vulkan validation: " + nativeValidationLog + Environment.NewLine);
             if (options.ExtendedLogging)
@@ -609,10 +607,49 @@ internal static class KharvoxRunner
             }
             const long logOffset = 0;
             EnsureNoRunningDoom();
+            WineVulkanLoader? preparedWineLoader;
+            try { preparedWineLoader = wine ? WineVulkanLoader.Prepare(options.GameDirectory!, runtimeDir, logPath) : null; }
+            catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException
+                || exception is InvalidOperationException || exception is AggregateException)
+            {
+                AppendLauncherLog(logPath, "Wine Vulkan staging failed error=" + exception);
+                throw;
+            }
+            using var wineLoader = preparedWineLoader;
+            if (wineLoader is not null)
+            {
+                try { wineLoader.Configure(psi, runtimeDir); }
+                catch (Exception exception) when (exception is IOException || exception is UnauthorizedAccessException)
+                {
+                    AppendLauncherLog(logPath, "Wine Vulkan configuration failed error=" + exception);
+                    throw;
+                }
+                AppendLauncherLog(logPath, "Wine Vulkan private loader staged; ICD=\""
+                    + psi.EnvironmentVariables["KHARVOX_WINE_ICD"] + "\" layerPath=\""
+                    + psi.EnvironmentVariables["KHARVOX_WINE_LAYERS"] + "\"");
+            }
             if (options.ExtendedLogging)
                 AppendRegistryDiagnostics(logPath, launchId, "before-process-start", key,
                     manifestPath);
             var startedProcess = Process.Start(psi);
+            if (wineLoader is not null && startedProcess is not null)
+            {
+                try { wineLoader.StartCleanupHelper(startedProcess); }
+                catch (Exception exception)
+                {
+                    AppendLauncherLog(logPath, "Wine Vulkan cleanup helper failed; stopping DOOM error=" + exception);
+                    try
+                    {
+                        if (!startedProcess.HasExited) { startedProcess.Kill(); startedProcess.WaitForExit(); }
+                    }
+                    catch
+                    {
+                        wineLoader.PreserveForRecovery();
+                        throw;
+                    }
+                    throw;
+                }
+            }
             AppendLauncherLog(logPath, "Process.Start pid="
                 + (startedProcess?.Id.ToString(Invariant) ?? "<null>")
                 + " executable=\"" + gameExe + "\"");

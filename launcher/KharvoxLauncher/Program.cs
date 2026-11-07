@@ -6,6 +6,7 @@ internal static class Program
     private static int Main(string[] args)
     {
         if (args.Length > 0 && args[0] == "--vr-intro") return VrIntroHost.Run(args.Skip(1).ToArray());
+        if (args.Length == 1 && args[0] == "--self-test-layer") return SelfTest.RunLayerIsolation();
 
         if (args.Length == 2 && args[0] == "--verify-game")
         {
@@ -84,7 +85,7 @@ internal static class Program
             Log(ex.ToString());
             Log("ExitCode=1");
             if (ex is HeadsetUnavailableException)
-                MessageBox.Show(ex.Message, "KHARVOX – Headset unavailable", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                MessageBox.Show(ex.Message, "KHARVOX ï¿½ Headset unavailable", MessageBoxButtons.OK, MessageBoxIcon.Warning);
             if (ex is RenderMemoryCapacityException)
                 MessageBox.Show(ex.Message, "KHARVOX â€“ Render Scale too high",
                     MessageBoxButtons.OK, MessageBoxIcon.Error);

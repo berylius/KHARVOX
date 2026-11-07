@@ -4,6 +4,27 @@ namespace KharvoxLauncher;
 
 internal static class SelfTest
 {
+    internal static int RunLayerIsolation()
+    {
+        var testRoot = Path.Combine(Path.GetTempPath(), "kharvox-layer-test-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            Directory.CreateDirectory(testRoot);
+            TestLayerIsolation(testRoot);
+            return 0;
+        }
+        catch (Exception error)
+        {
+            File.WriteAllText(Path.Combine(Path.GetTempPath(), "KHARVOX-launcher-self-test-error.log"), error.ToString());
+            return 1;
+        }
+        finally
+        {
+            try { if (Directory.Exists(testRoot)) Directory.Delete(testRoot, true); }
+            catch { }
+        }
+    }
+
     private static void VerifyProcessStatusPreservesExitCode()
     {
         var flags = BindingFlags.Static | BindingFlags.NonPublic;

@@ -683,6 +683,7 @@ internal static class KharvoxRunner
             currentGame?.Dispose();
             currentGame = game;
             await FocusDoomOnceWhenWindowReadyAsync(game, logPath);
+            AppendVulkanModuleDiagnostics(game, logPath, "window-search-finished");
             statusUpdate?.Invoke("DOOM started. Verifying the VR image …");
 
             var startup = await Task.Run(() =>
@@ -692,6 +693,8 @@ internal static class KharvoxRunner
             AppendLauncherLog(logPath, "startup result=" + startup
                 + " wine=" + wine + " layerLoadEvidence="
                 + LayerLoadEvidence(logPath, Path.Combine(runtimeDir, ".")));
+            if (startup != StartupState.Exited)
+                AppendVulkanModuleDiagnostics(game, logPath, "startup-result");
             if (startup == StartupState.Healthy)
             {
                 // FSR1 writes its ACTIVE status only after the
@@ -1638,6 +1641,29 @@ internal static class KharvoxRunner
             try { File.AppendAllText(logPath, "[KHARVOX][LAUNCHER] " + message + Environment.NewLine); }
             catch (IOException) { }
             catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    private static void AppendVulkanModuleDiagnostics(Process game, string logPath, string stage)
+    {
+        try
+        {
+            game.Refresh();
+            var modules = game.Modules.Cast<ProcessModule>()
+                .Where(module => string.Equals(module.ModuleName, "vulkan-1.dll", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(module.ModuleName, "winevulkan.dll", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(module.ModuleName, "KharvoxLayer.dll", StringComparison.OrdinalIgnoreCase))
+                .Select(module => module.ModuleName + "=\"" + module.FileName + "\"")
+                .ToArray();
+            AppendLauncherLog(logPath, "DOOM Vulkan modules stage=" + stage
+                + " pid=" + game.Id.ToString(Invariant)
+                + " modules=" + (modules.Length == 0 ? "<none-observed>" : string.Join(" ", modules)));
+        }
+        catch (Exception exception) when (exception is System.ComponentModel.Win32Exception
+            || exception is InvalidOperationException || exception is NotSupportedException)
+        {
+            AppendLauncherLog(logPath, "DOOM Vulkan modules stage=" + stage
+                + " error=" + exception.GetType().Name + " message=\"" + exception.Message.Replace("\"", "'") + "\"");
         }
     }
 

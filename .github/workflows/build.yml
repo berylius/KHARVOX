@@ -26,6 +26,15 @@ jobs:
         run: dotnet restore launcher/KharvoxLauncher/KharvoxLauncher.csproj
       - name: Build launcher
         run: dotnet build launcher/KharvoxLauncher/KharvoxLauncher.csproj --configuration Release --no-restore
+      - name: Run launcher self-test
+        shell: pwsh
+        run: |
+          $test = Start-Process -FilePath launcher/KharvoxLauncher/bin/Release/net48/KharvoxLauncher.exe -ArgumentList '--self-test' -Wait -PassThru
+          if ($test.ExitCode -ne 0) {
+            $log = Join-Path $env:TEMP 'KHARVOX-launcher-self-test-error.log'
+            if (Test-Path $log) { Get-Content $log }
+            throw "Launcher self-test failed: $($test.ExitCode)"
+          }
       - name: Stage build artifacts
         shell: pwsh
         run: |

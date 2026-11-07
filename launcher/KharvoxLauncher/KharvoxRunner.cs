@@ -794,6 +794,9 @@ internal static class KharvoxRunner
             var failureMessage = processExited
                 ? "DOOM exited before a stable VR frame stream was confirmed. Exit code: 0x"
                     + exitCode.GetValueOrDefault().ToString("X8", Invariant) + "."
+                    + (wine
+                        ? "\n\nUnder Wine/Proton, the OpenXR bridge (wineopenxr) returns Vulkan handles that are incompatible with KHARVOX's private Vulkan loader, so VR cannot start yet. Make sure KharvoxLayer.dll is the latest build, then see KHARVOX.log in %TEMP%."
+                        : string.Empty)
                 : startup == StartupState.DeviceLost
                     ? "SteamVR lost the Vulkan device during startup. Restart SteamVR and try once more."
                 : startup == StartupState.PresentStreamStalled

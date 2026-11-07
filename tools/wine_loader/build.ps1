@@ -27,10 +27,10 @@ function Get-PinnedSource {
 Get-PinnedSource $loader 'https://github.com/KhronosGroup/Vulkan-Loader.git' '5f157b62e333c63260d05d81bf66faa216ab0fb8'
 Get-PinnedSource $headers 'https://github.com/KhronosGroup/Vulkan-Headers.git' 'e3b1eec08173d6b825cd3ac88c885a63b621504a'
 $patch = Join-Path $PSScriptRoot 'khronos-wine.patch'
-& git -C $loader apply --reverse --check $patch 2>$null
+& git -C $loader apply --unidiff-zero --reverse --check $patch 2>$null
 if ($LASTEXITCODE -ne 0) {
-    Invoke-Checked 'git' @('-C', $loader, 'apply', '--check', $patch)
-    Invoke-Checked 'git' @('-C', $loader, 'apply', $patch)
+    Invoke-Checked 'git' @('-C', $loader, 'apply', '--unidiff-zero', '--check', $patch)
+    Invoke-Checked 'git' @('-C', $loader, 'apply', '--unidiff-zero', $patch)
 }
 $headersBuild = Join-Path $work 'headers-build'
 $headersInstall = Join-Path $work 'headers-install'

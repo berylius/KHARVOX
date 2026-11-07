@@ -209,6 +209,14 @@ If you enjoy KHARVOX, you can support its development on Ko-fi. Thank you!
 - Visual Studio with **Desktop development with C++** and a Windows SDK
 - .NET SDK with the .NET Framework 4.8 targeting pack
 
+Wine/Proton support is experimental. Wine's built-in `vulkan-1.dll` can bypass
+Windows Vulkan layer discovery, so registering KHARVOX's implicit layer does
+not by itself make injection work. A Windows Vulkan loader and a compatible
+Wine Vulkan ICD bridge would be needed; they are not currently bundled or
+validated by KHARVOX. For diagnosis, enable extended logging and inspect
+`KHARVOX.log` and `KHARVOX-vulkan-loader-v1.0.log` in the Windows `%TEMP%`
+directory. A focused DOOM window does not confirm that the layer loaded.
+
 Clone the repository and its optional PSVR2 Toolkit source link:
 
 ```powershell

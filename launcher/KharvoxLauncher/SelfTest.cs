@@ -684,6 +684,17 @@ internal static class SelfTest
 
     private static void TestLayerIsolation(string directory)
     {
+        var layerLog = Path.Combine(directory, "layer-evidence.log");
+        var runtime = Path.Combine(directory, ".");
+        File.WriteAllText(layerLog, "[KHARVOX][LAUNCHER] runtimeDir=" + runtime);
+        Require(KharvoxRunner.LayerLoadEvidence(layerLog, runtime) == "not-observed",
+            "launcher runtime path alone does not prove layer injection");
+        File.AppendAllText(layerLog, "\n[KHARVOX] Layer loaded build=test runtimeDir=" + runtime);
+        Require(KharvoxRunner.LayerLoadEvidence(layerLog, runtime) == "observed"
+            && KharvoxRunner.LayerLoadEvidence(layerLog, Path.Combine(directory, "other")) == "not-observed",
+            "layer injection evidence is tied to the current runtime");
+        Require(KharvoxRunner.LayerLoadEvidence(layerLog + ".missing", runtime).StartsWith("read-error:"),
+            "unreadable layer log is not reported as absence");
         var manifest = Path.Combine(directory, "KharvoxLayer.json");
         KharvoxRunner.WriteManifest(manifest, Assembly.GetExecutingAssembly().Location);
         var json = new System.Web.Script.Serialization.JavaScriptSerializer()

@@ -1,0 +1,39 @@
+name: Build
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build & Test (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - name: Configure CMake
+        run: cmake -S . -B build/native -A x64 -DKHARVOX_BUILD_LAYER=ON -DBUILD_TESTING=ON
+      - name: Build native layer and bridges
+        run: cmake --build build/native --config Release --parallel
+      - name: Run native tests
+        run: ctest --test-dir build/native -C Release --output-on-failure -E "sfs-multiview-gpu|hand-scene-depth-gpu|native-depth-seed-gpu|fsr1-gpu-current-eyes|vr-cube-intro"
+      - name: Restore launcher
+        run: dotnet restore launcher/KharvoxLauncher/KharvoxLauncher.csproj
+      - name: Build launcher
+        run: dotnet build launcher/KharvoxLauncher/KharvoxLauncher.csproj --configuration Release --no-restore
+      - name: Stage build artifacts
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path staging -Force
+          Copy-Item build/native/Release/KharvoxLayer.dll staging/
+          Copy-Item launcher/KharvoxLauncher/bin/Release/net48/KharvoxLauncher.exe staging/
+          Copy-Item config staging/config -Recurse
+      - uses: actions/upload-artifact@v4
+        with:
+          name: kharvox-windows-x64
+          path: staging/

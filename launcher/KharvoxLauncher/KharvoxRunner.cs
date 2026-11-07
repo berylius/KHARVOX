@@ -264,6 +264,7 @@ internal static class KharvoxRunner
         var manifestPath = Path.Combine(runtimeDir, "KharvoxLayer.json");
         var launchId = Guid.NewGuid().ToString("N").Substring(0, 12);
         var loaderLogPath = Path.Combine(Path.GetTempPath(), "KHARVOX-vulkan-loader-v1.0.log");
+        var wine = IsWine();
         var gameExe = Path.Combine(options.GameDirectory ?? string.Empty, "DOOMx64vk.exe");
         if (!File.Exists(gameExe)) throw new FileNotFoundException(
             "Select the DOOM (2016) installation folder containing DOOMx64vk.exe.", gameExe);
@@ -587,6 +588,12 @@ internal static class KharvoxRunner
                 " doomAsyncCompute=disabled renderer=" + (sfsEnabled ? "VULKAN_SFS" : nativeStereoEnabled ? "NATIVE (experimental; headset unvalidated)" : "AER") +
                 " fsr1=" + (fsr1Enabled ? "enabled" : "disabled") + Environment.NewLine +
                 "[KHARVOX][LAUNCHER] gameArguments=" + psi.Arguments + Environment.NewLine);
+            AppendLauncherLog(logPath, "layer registration manifest=\"" + manifestPath
+                + "\" dll=\"" + dllPath + "\" registryEnabled=" + RegistryValueMatches(key, manifestPath)
+                + " childOptIn=" + psi.EnvironmentVariables["KHARVOX_ENABLE_LAYER"]
+                + " wine=" + wine + " loaderCapture=" + options.ExtendedLogging);
+            if (wine)
+                AppendLauncherLog(logPath, "Wine detected: its built-in vulkan-1.dll may bypass Windows Vulkan layer discovery; a registered manifest alone does not confirm injection.");
             if (nativeValidationLog is not null)
                 File.AppendAllText(logPath, "[KHARVOX][LAUNCHER] Native Vulkan validation: " + nativeValidationLog + Environment.NewLine);
             if (options.ExtendedLogging)
@@ -606,6 +613,9 @@ internal static class KharvoxRunner
                 AppendRegistryDiagnostics(logPath, launchId, "before-process-start", key,
                     manifestPath);
             var startedProcess = Process.Start(psi);
+            AppendLauncherLog(logPath, "Process.Start pid="
+                + (startedProcess?.Id.ToString(Invariant) ?? "<null>")
+                + " executable=\"" + gameExe + "\"");
             if (options.ExtendedLogging && startedProcess is not null)
             {
                 AttachVulkanLoaderCapture(startedProcess, loaderLogPath, launchId);
@@ -637,7 +647,12 @@ internal static class KharvoxRunner
                 await Task.Delay(500);
                 game = Process.GetProcessesByName("DOOMx64vk").FirstOrDefault();
             }
-            if (game is null) throw new InvalidOperationException("DOOM did not start within 45 seconds.");
+            if (game is null)
+            {
+                AppendLauncherLog(logPath, "DOOM process search timed out after 45 seconds");
+                throw new InvalidOperationException("DOOM did not start within 45 seconds.");
+            }
+            AppendLauncherLog(logPath, "DOOM process tracked pid=" + game.Id.ToString(Invariant));
             if (options.ExtendedLogging)
                 AppendDiagnostic(logPath, launchId,
                     "tracked DOOM pid=" + game.Id.ToString(Invariant)
@@ -674,6 +689,9 @@ internal static class KharvoxRunner
                 WaitForStartup(game, logPath, logOffset, TimeSpan.FromSeconds(70),
                     "runtimeDir=" + Path.Combine(runtimeDir, "."),
                     options.ExtendedLogging, launchId));
+            AppendLauncherLog(logPath, "startup result=" + startup
+                + " wine=" + wine + " layerLoadEvidence="
+                + LayerLoadEvidence(logPath, Path.Combine(runtimeDir, ".")));
             if (startup == StartupState.Healthy)
             {
                 // FSR1 writes its ACTIVE status only after the
@@ -708,7 +726,9 @@ internal static class KharvoxRunner
                 AppendDiagnostic(logPath, launchId,
                     "startup unconfirmed state=" + startup + "; preserving DOOM process");
                 WriteRendererStatus(runtimeDir, "Renderer: startup not confirmed; DOOM remains running");
-                statusUpdate?.Invoke("VR startup could not be confirmed. DOOM remains running; check the headset and runtime.");
+                statusUpdate?.Invoke(wine
+                    ? "VR startup could not be confirmed under Wine/Proton. Windows Vulkan layer injection may not be supported by the active loader; see KHARVOX.log."
+                    : "VR startup could not be confirmed. DOOM remains running; check the headset and runtime.");
                 gameDetected?.Invoke();
                 launchSucceeded = true;
                 return;
@@ -796,13 +816,17 @@ internal static class KharvoxRunner
                     if (ShouldRestoreStartupFocus(foregroundPid, (uint)launcher.Id,
                         (uint)currentGame.Id, foreground == IntPtr.Zero || foreground == shell))
                     {
-                        var target = FindDoomWindow(currentGame);
-                        var focused = target != IntPtr.Zero && FocusWindow(target, currentGame.Id);
+                        var target = FindDoomWindow(currentGame, Path.Combine(Path.GetTempPath(), "KHARVOX.log"), "post-intro-handoff");
+                        var focused = target != IntPtr.Zero && FocusWindow(target, currentGame.Id, Path.Combine(Path.GetTempPath(), "KHARVOX.log"), "post-intro-handoff");
                         AppendFocusLog(Path.Combine(Path.GetTempPath(), "KHARVOX.log"), "post-intro-handoff", focused, foregroundPid, 1);
                     }
                     else AppendFocusLog(Path.Combine(Path.GetTempPath(), "KHARVOX.log"), "post-handoff-other-app-preserved", false, foregroundPid, 0);
                 }
-                catch (InvalidOperationException) { }
+                catch (InvalidOperationException exception)
+                {
+                    AppendLauncherLog(Path.Combine(Path.GetTempPath(), "KHARVOX.log"),
+                        "DOOM post-intro focus unavailable error=" + exception.Message);
+                }
             }
             if (!launchSucceeded)
             {
@@ -1469,8 +1493,9 @@ internal static class KharvoxRunner
         try
         {
             if (game.HasExited) return false;
-            var target = FindDoomWindow(game);
-            return target != IntPtr.Zero && FocusWindow(target, game.Id);
+            var logPath = Path.Combine(Path.GetTempPath(), "KHARVOX.log");
+            var target = FindDoomWindow(game, logPath, "user-request");
+            return target != IntPtr.Zero && FocusWindow(target, game.Id, logPath, "user-request");
         }
         catch (InvalidOperationException) { return false; }
     }
@@ -1480,47 +1505,87 @@ internal static class KharvoxRunner
     {
         // Wait only for window creation; never retry focus or reclaim it later.
         var deadline = DateTime.UtcNow.AddSeconds(10);
+        var attempts = 0;
+        var started = DateTime.UtcNow;
+        AppendLauncherLog(logPath, "DOOM window search reason=startup pid=" + game.Id.ToString(Invariant) + " timeoutMs=10000");
         while (DateTime.UtcNow < deadline)
         {
             try
             {
-                if (game.HasExited) return false;
+                if (game.HasExited)
+                {
+                    AppendLauncherLog(logPath, "DOOM window search result=process-exited attempts=" + attempts.ToString(Invariant));
+                    return false;
+                }
+                attempts++;
                 var target = FindDoomWindow(game);
                 if (target != IntPtr.Zero)
                 {
+                    AppendLauncherLog(logPath, "DOOM window search result=found pid=" + game.Id.ToString(Invariant)
+                        + " hwnd=0x" + target.ToInt64().ToString("X", Invariant)
+                        + " attempts=" + attempts.ToString(Invariant)
+                        + " elapsedMs=" + (DateTime.UtcNow - started).TotalMilliseconds.ToString("F0", Invariant));
                     var foregroundBefore = ForegroundProcessId();
-                    var focused = FocusWindow(target, game.Id);
-                    AppendFocusLog(logPath, "startup-once", focused, foregroundBefore, 1);
+                    var focused = FocusWindow(target, game.Id, logPath, "startup-once");
+                    AppendFocusLog(logPath, "startup-once", focused, foregroundBefore, attempts);
                     return focused;
                 }
             }
-            catch (InvalidOperationException) { return false; }
+            catch (InvalidOperationException exception)
+            {
+                AppendLauncherLog(logPath, "DOOM window search result=error error=" + exception.Message);
+                return false;
+            }
             await Task.Delay(100);
         }
-        AppendFocusLog(logPath, "startup-window-unavailable", false, ForegroundProcessId(), 0);
+        try { FindDoomWindow(game, logPath, "startup-timeout"); }
+        catch (InvalidOperationException exception)
+        {
+            AppendLauncherLog(logPath, "DOOM window search timeout detail error=" + exception.Message);
+        }
+        AppendFocusLog(logPath, "startup-window-unavailable", false, ForegroundProcessId(), attempts);
         return false;
     }
 
-    private static IntPtr FindDoomWindow(Process game)
+    private static IntPtr FindDoomWindow(Process game, string? logPath = null, string? reason = null)
     {
         game.Refresh();
         IntPtr target = game.MainWindowHandle;
+        var mainWindow = target;
+        var matching = 0;
+        var visible = 0;
+        var enumerationResult = true;
         if (target == IntPtr.Zero)
         {
-            EnumWindows((window, _) => {
+            enumerationResult = EnumWindows((window, _) => {
                 GetWindowThreadProcessId(window, out var pid);
-                if (pid == (uint)game.Id && IsWindowVisible(window))
+                if (pid == (uint)game.Id)
                 {
-                    target = window;
-                    return false;
+                    matching++;
+                    if (IsWindowVisible(window))
+                    {
+                        visible++;
+                        target = window;
+                        return false;
+                    }
                 }
                 return true;
             }, IntPtr.Zero);
         }
+        if (logPath is not null)
+            AppendLauncherLog(logPath, "DOOM window search reason=" + reason
+                + " pid=" + game.Id.ToString(Invariant)
+                + " mainHwnd=0x" + mainWindow.ToInt64().ToString("X", Invariant)
+                + " selectedHwnd=0x" + target.ToInt64().ToString("X", Invariant)
+                + " matchingWindows=" + matching.ToString(Invariant)
+                + " visibleWindows=" + visible.ToString(Invariant)
+                + " enumResult=" + (mainWindow != IntPtr.Zero ? "not-needed"
+                    : target != IntPtr.Zero ? "stopped-on-match"
+                    : enumerationResult ? "completed" : "failed"));
         return target;
     }
 
-    private static bool FocusWindow(IntPtr target, int gameProcessId)
+    private static bool FocusWindow(IntPtr target, int gameProcessId, string? logPath = null, string? reason = null)
     {
         lock (focusOperationLock)
         {
@@ -1528,29 +1593,82 @@ internal static class KharvoxRunner
             GetWindowThreadProcessId(GetForegroundWindow(), out var foregroundPid);
             if (foregroundPid == (uint)gameProcessId) return true;
 
-            AllowSetForegroundWindow((uint)gameProcessId);
-            ShowWindowAsync(target, 9);
+            var allowed = AllowSetForegroundWindow((uint)gameProcessId);
+            var shown = ShowWindowAsync(target, 9);
             var foreground = GetForegroundWindow();
             var foregroundThread = foreground == IntPtr.Zero
                 ? 0u : GetWindowThreadProcessId(foreground, out _);
             var targetThread = GetWindowThreadProcessId(target, out _);
             var attached = false;
+            var raised = false;
+            var foregroundSet = false;
+            var previousFocus = IntPtr.Zero;
             try
             {
                 if (foregroundThread != 0 && targetThread != 0
                     && foregroundThread != targetThread)
                     attached = AttachThreadInput(foregroundThread, targetThread, true);
-                BringWindowToTop(target);
-                SetForegroundWindow(target);
-                SetFocus(target);
+                raised = BringWindowToTop(target);
+                foregroundSet = SetForegroundWindow(target);
+                previousFocus = SetFocus(target);
             }
             finally
             {
                 if (attached) AttachThreadInput(foregroundThread, targetThread, false);
             }
-            return ForegroundProcessId() == (uint)gameProcessId;
+            var foregroundAfter = ForegroundProcessId();
+            if (logPath is not null)
+                AppendLauncherLog(logPath, "DOOM focus detail reason=" + reason
+                    + " hwnd=0x" + target.ToInt64().ToString("X", Invariant)
+                    + " targetPid=" + gameProcessId.ToString(Invariant)
+                    + " foregroundThread=" + foregroundThread.ToString(Invariant)
+                    + " targetThread=" + targetThread.ToString(Invariant)
+                    + " allow=" + allowed + " show=" + shown + " attach=" + attached
+                    + " raise=" + raised + " setForeground=" + foregroundSet
+                    + " previousFocus=0x" + previousFocus.ToInt64().ToString("X", Invariant)
+                    + " foregroundPidAfter=" + foregroundAfter.ToString(Invariant));
+            return foregroundAfter == (uint)gameProcessId;
         }
     }
+
+    private static void AppendLauncherLog(string logPath, string message)
+    {
+        lock (diagnosticLogLock)
+        {
+            try { File.AppendAllText(logPath, "[KHARVOX][LAUNCHER] " + message + Environment.NewLine); }
+            catch (IOException) { }
+            catch (UnauthorizedAccessException) { }
+        }
+    }
+
+    internal static string LayerLoadEvidence(string logPath, string runtimeDirectory)
+    {
+        try
+        {
+            using var stream = new FileStream(logPath, FileMode.Open, FileAccess.Read,
+                FileShare.ReadWrite | FileShare.Delete);
+            using var reader = new StreamReader(stream, Encoding.UTF8, true);
+            var buffer = new char[64 * 1024];
+            var count = reader.ReadBlock(buffer, 0, buffer.Length);
+            var text = new string(buffer, 0, count);
+            return text.Split('\n').Any(line =>
+                line.Contains("Layer loaded build=")
+                && line.Contains("runtimeDir=" + runtimeDirectory)) ? "observed" : "not-observed";
+        }
+        catch (IOException exception) { return "read-error:" + exception.GetType().Name; }
+        catch (UnauthorizedAccessException exception) { return "read-error:" + exception.GetType().Name; }
+    }
+
+    private static bool IsWine()
+    {
+        var ntdll = GetModuleHandle("ntdll.dll");
+        return ntdll != IntPtr.Zero && GetProcAddress(ntdll, "wine_get_version") != IntPtr.Zero;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
+    private static extern IntPtr GetModuleHandle(string name);
+    [DllImport("kernel32.dll", CharSet = CharSet.Ansi, ExactSpelling = true)]
+    private static extern IntPtr GetProcAddress(IntPtr module, string name);
 
     internal static bool ShouldRestoreStartupFocus(uint foreground, uint launcher, uint game, bool desktop) =>
         desktop || foreground == launcher || foreground == game;

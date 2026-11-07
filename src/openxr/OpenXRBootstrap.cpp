@@ -3374,7 +3374,15 @@ bool KharvoxXRCreateVulkanInstance(PFN_vkGetInstanceProcAddr g,const VkInstanceC
     else xi.pfnGetInstanceProcAddr=g;
     log(std::string("[XR-STARTUP] creating Vulkan instance via ")+(s.useEnable2Bridge?"VD bridge":"runtime-managed")+
         " nextGipaOwner="+pointerOwner(reinterpret_cast<PFN_vkVoidFunction>(g)),true);
+    const VkInstance loaderSeed=*out;
     rr=s.createVulkanInstance(s.instance,&xi,out,vr);
+    const bool privateWineLoader=GetEnvironmentVariableW(L"KHARVOX_WINE_ICD",nullptr,0)>0;
+    if(kharvox::wineRuntimeReplacedLoaderInstance(GetModuleHandleW(L"wineopenxr.dll")!=nullptr,
+        privateWineLoader,loaderSeed,*out,XR_SUCCEEDED(rr),*vr)){
+        log("[XR-STARTUP] Wine OpenXR returned a Vulkan instance outside the private loader chain; "
+            "cannot safely create the VR session. Wine/Proton OpenXR handle translation is not implemented.",true);
+        *vr=VK_ERROR_INITIALIZATION_FAILED;
+    }
     kharvox::finishRuntimeVulkanCreate(XR_SUCCEEDED(rr),vr,out);
     log("xrCreateVulkanInstanceKHR xr="+result(rr)+" vk="+std::to_string(*vr),true);
     if(*vr==VK_SUCCESS)s.vkInstance=*out;

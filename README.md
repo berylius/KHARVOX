@@ -219,6 +219,12 @@ next launch recovers it only when its ownership marker and hash match. A
 changed loader is preserved and must be inspected manually. Do not remove the
 marker while the temporary loader is present.
 
+GE-Proton's Wine OpenXR bridge can return Vulkan handles owned by Wine rather
+than by this private loader. This combination is currently incompatible with
+KHARVOX VR, including the observed WiVRn setup. The updated native layer stops
+startup with a diagnostic when it detects the mismatch; this avoids the
+observed access violation but does not yet make VR work under Wine.
+
 For diagnosis, enable extended logging and inspect `KHARVOX.log` and
 `KHARVOX-vulkan-loader-v1.0.log` in the Windows `%TEMP%` directory. A focused
 DOOM window or layer registration alone does not confirm that the layer loaded.

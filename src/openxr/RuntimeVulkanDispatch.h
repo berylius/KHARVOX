@@ -21,6 +21,11 @@ template<class Handle> inline void finishRuntimeVulkanCreate(bool xrSucceeded, V
     if (!xrSucceeded || (*result == VK_SUCCESS && !*output)) *result = VK_ERROR_INITIALIZATION_FAILED;
     if (*result != VK_SUCCESS) *output = VK_NULL_HANDLE;
 }
+inline bool wineRuntimeReplacedLoaderInstance(bool wineBridge, bool privateLoader,
+    VkInstance seeded, VkInstance returned, bool xrSucceeded, VkResult result) {
+    return wineBridge && privateLoader && seeded && returned && seeded != returned
+        && xrSucceeded && result == VK_SUCCESS;
+}
 inline bool isPhysicalDeviceCommand(const char* name) {
     return name && (!std::strncmp(name, "vkGetPhysicalDevice", 19) ||
         !std::strcmp(name, "vkEnumerateDeviceExtensionProperties") ||

@@ -51,6 +51,17 @@ int main() {
     finishRuntimeVulkanCreate(true,&staleSuccess,&empty);
     require(staleSuccess==VK_ERROR_INITIALIZATION_FAILED && !empty);
 
+    auto seed=reinterpret_cast<VkInstance>(uintptr_t(17));
+    auto foreign=reinterpret_cast<VkInstance>(uintptr_t(18));
+    require(wineRuntimeReplacedLoaderInstance(true,true,seed,foreign,true,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(false,true,seed,foreign,true,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(true,false,seed,foreign,true,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(true,true,nullptr,foreign,true,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(true,true,seed,nullptr,true,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(true,true,seed,seed,true,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(true,true,seed,foreign,false,VK_SUCCESS));
+    require(!wineRuntimeReplacedLoaderInstance(true,true,seed,foreign,true,VK_ERROR_INITIALIZATION_FAILED));
+
     for (const char* command : {"vkGetPhysicalDeviceMemoryProperties", "vkGetPhysicalDeviceProperties2",
          "vkEnumerateDeviceExtensionProperties", "vkEnumerateDeviceLayerProperties"}) {
         auto sim = resolveRuntimeVulkanProc(instance, command, false, true, downstream, loader, createAdapter);

@@ -45,15 +45,21 @@ internal sealed class WineVulkanLoader : IDisposable
         using (var stream = new FileStream(marker, FileMode.CreateNew, FileAccess.Write, FileShare.None))
         using (var writer = new StreamWriter(stream, new UTF8Encoding(false)))
             writer.Write(token + "\n" + hash + "\n");
+        var createdDestination = false;
         try
         {
             using var input = File.OpenRead(source);
             using var output = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+            createdDestination = true;
             input.CopyTo(output);
         }
         catch (Exception copyError)
         {
-            try { lease.Cleanup(); }
+            try
+            {
+                if (createdDestination) lease.Cleanup();
+                else lease.RemoveMarker();
+            }
             catch (Exception cleanupError) when (cleanupError is IOException || cleanupError is UnauthorizedAccessException
                 || cleanupError is InvalidOperationException)
             {
@@ -181,8 +187,17 @@ internal sealed class WineVulkanLoader : IDisposable
                 throw new InvalidOperationException("The DOOM Vulkan loader changed; KHARVOX will not remove it.");
             File.Delete(loader);
         }
-        File.Delete(marker);
+        RemoveMarker();
         Log(logPath, "temporary loader removed from \"" + gameDirectory + "\"");
+    }
+
+    private void RemoveMarker()
+    {
+        var marker = Path.Combine(gameDirectory, MarkerName);
+        var lines = File.ReadAllLines(marker);
+        if (lines.Length != 2 || lines[0] != token || lines[1] != hash)
+            throw new InvalidOperationException("KHARVOX Wine loader marker changed; no files were removed.");
+        File.Delete(marker);
     }
 
     private static string QuoteArgument(string value)

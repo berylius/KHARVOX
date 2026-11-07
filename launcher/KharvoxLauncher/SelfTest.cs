@@ -837,7 +837,8 @@ internal static class SelfTest
         var deadline = DateTime.UtcNow.AddSeconds(15);
         while (File.Exists(marker) && DateTime.UtcNow < deadline) Thread.Sleep(100);
         Require(!File.Exists(destination) && !File.Exists(marker),
-            "independent helper removes loader after child exit");
+            "independent helper removes loader after child exit; log="
+                + (File.Exists(log) ? File.ReadAllText(log) : "<missing>"));
     }
 
     private static void TestNativeLaunchRecovery(string directory)

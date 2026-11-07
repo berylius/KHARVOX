@@ -143,8 +143,7 @@ internal sealed class WineVulkanLoader : IDisposable
                 if (game.StartTime.ToUniversalTime().Ticks == ticks)
                 {
                     game.WaitForExit();
-                    Log(logPath, "game exited pid=" + pid.ToString(CultureInfo.InvariantCulture)
-                        + " code=0x" + game.ExitCode.ToString("X8", CultureInfo.InvariantCulture));
+                    Log(logPath, "game exited pid=" + pid.ToString(CultureInfo.InvariantCulture));
                 }
             }
             catch (ArgumentException) { }

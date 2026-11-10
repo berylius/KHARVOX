@@ -1518,20 +1518,40 @@ internal static class KharvoxRunner
     private static IntPtr FindDoomWindow(Process game)
     {
         game.Refresh();
-        IntPtr target = game.MainWindowHandle;
-        if (target == IntPtr.Zero)
-        {
-            EnumWindows((window, _) => {
-                GetWindowThreadProcessId(window, out var pid);
-                if (pid == (uint)game.Id && IsWindowVisible(window))
-                {
-                    target = window;
-                    return false;
-                }
-                return true;
-            }, IntPtr.Zero);
-        }
-        return target;
+        IntPtr target = IntPtr.Zero;
+        try { target = game.MainWindowHandle; } catch { }
+        if (target != IntPtr.Zero) return target;
+
+        // Wine/Proton: MainWindowHandle is often 0 and the window may not be
+        // reported visible yet, so match by PID, then by title, and finally
+        // accept a large hidden window owned by the process.
+        IntPtr byPid = IntPtr.Zero, hiddenByPid = IntPtr.Zero, byTitle = IntPtr.Zero;
+        var sb = new StringBuilder(256);
+        EnumWindows((window, _) => {
+            GetWindowThreadProcessId(window, out var pid);
+            var visible = IsWindowVisible(window);
+            if (pid == (uint)game.Id)
+            {
+                if (visible && byPid == IntPtr.Zero) byPid = window;
+                else if (!visible && hiddenByPid == IntPtr.Zero
+                    && GetWindowRect(window, out var r)
+                    && r.Right - r.Left >= 320 && r.Bottom - r.Top >= 240)
+                    hiddenByPid = window;
+            }
+            if (visible && byTitle == IntPtr.Zero)
+            {
+                sb.Clear();
+                GetWindowText(window, sb, sb.Capacity);
+                var title = sb.ToString();
+                if (title.StartsWith("DOOMx64vk", StringComparison.OrdinalIgnoreCase)
+                    || title.Equals("DOOM", StringComparison.OrdinalIgnoreCase))
+                    byTitle = window;
+            }
+            return true;
+        }, IntPtr.Zero);
+        if (byPid != IntPtr.Zero) return byPid;
+        if (byTitle != IntPtr.Zero) return byTitle;
+        return hiddenByPid;
     }
 
     private static bool FocusWindow(IntPtr target, int gameProcessId)
@@ -1603,6 +1623,7 @@ internal static class KharvoxRunner
     }
 
     private delegate bool EnumWindowsProc(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern int GetWindowText(IntPtr window, StringBuilder text, int maxCount);
     [DllImport("user32.dll")] private static extern bool EnumWindows(EnumWindowsProc callback, IntPtr parameter);
     [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
     [DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();

@@ -227,9 +227,9 @@ the layer passes the bridge the `winevulkan` handles exported by the private
 loader. This path has not yet been confirmed with a headset; the `[WINE-XR]`
 lines in `KHARVOX.log` show how far startup got.
 
-Launcher settings for the game (for example in Heroic) must not set a
-`vulkan-1` DLL override, `VK_INSTANCE_LAYERS`, `VK_LAYER_PATH` or
-`KHARVOX_ENABLE_LAYER`, and the prefix must keep Proton's own `vulkan-1.dll`.
+Under Wine the launcher names the layer in `VK_INSTANCE_LAYERS` for DOOM itself;
+no Vulkan layer variable is needed in the game's launcher settings (for example
+in Heroic), and a `vulkan-1` DLL override there is replaced for DOOM.
 Keep the OpenXR settings (`openxr_loader=n,b`, `XR_RUNTIME_JSON` and the
 `PRESSURE_VESSEL_*` variables your runtime needs).
 

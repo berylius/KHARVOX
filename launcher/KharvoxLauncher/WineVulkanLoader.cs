@@ -99,30 +99,25 @@ internal sealed class WineVulkanLoader : IDisposable
         startInfo.EnvironmentVariables["WINEDLLOVERRIDES"] = string.Join(";", preserved);
         startInfo.EnvironmentVariables["KHARVOX_WINE_ICD"] = icd;
         startInfo.EnvironmentVariables["KHARVOX_WINE_LAYERS"] = runtimeDirectory;
-        RemoveForcedKharvoxLayer(startInfo);
+        RequestKharvoxLayer(startInfo);
     }
 
-    // Wine hands these variables to the host Vulkan loader as well, which then
-    // looks for the Windows layer among Linux layers. The private loader finds
-    // the layer through KHARVOX_WINE_LAYERS; a manual request only breaks DOOM.
-    internal static bool RemoveForcedKharvoxLayer(ProcessStartInfo startInfo)
+    // Every DOOM launch that loaded the layer through this loader named it in
+    // VK_INSTANCE_LAYERS; implicit activation alone did not. The host Vulkan
+    // loader also sees the variable and only warns about the unknown name.
+    internal static void RequestKharvoxLayer(ProcessStartInfo startInfo)
     {
         const string layer = "VK_LAYER_KHARVOX_OPENXR";
         var requested = startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"];
-        if (requested is null) return false;
-        var names = requested.Split(new[] { ';', ':', ',' }, StringSplitOptions.RemoveEmptyEntries);
-        var others = names.Where(name => !string.Equals(name.Trim(), layer, StringComparison.OrdinalIgnoreCase)).ToArray();
-        if (others.Length == names.Length) return false;
-        if (others.Length > 0)
+        if (string.IsNullOrWhiteSpace(requested))
         {
-            startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] = string.Join(
-                requested.Contains(";") || !requested.Contains(":") ? ";" : ":", others);
-            return true;
+            startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] = layer;
+            return;
         }
-        startInfo.EnvironmentVariables.Remove("VK_INSTANCE_LAYERS");
-        startInfo.EnvironmentVariables.Remove("VK_LAYER_PATH");
-        startInfo.EnvironmentVariables.Remove("VK_ADD_LAYER_PATH");
-        return true;
+        var names = requested!.Split(new[] { ';', ':', ',' }, StringSplitOptions.RemoveEmptyEntries);
+        if (names.Any(name => string.Equals(name.Trim(), layer, StringComparison.OrdinalIgnoreCase))) return;
+        startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] = requested
+            + (requested.Contains(";") || !requested.Contains(":") ? ";" : ":") + layer;
     }
 
     internal void StartCleanupHelper(Process game)

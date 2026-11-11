@@ -143,7 +143,7 @@ internal sealed class KharvoxLaunchOptions
 
 internal static class KharvoxRunner
 {
-    internal const string BuildId = "2026.10.27-launcher-v1.4a-ofxr-wine2";
+    internal const string BuildId = "2026.10.27-launcher-v1.4a-ofxr-wine3";
     private const string LayerName = "VK_LAYER_KHARVOX_OPENXR";
     private const string RegistryPath = @"SOFTWARE\Khronos\Vulkan\ImplicitLayers";
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
@@ -626,7 +626,7 @@ internal static class KharvoxRunner
                 }
                 AppendLauncherLog(logPath, "Wine Vulkan private loader staged; ICD=\""
                     + psi.EnvironmentVariables["KHARVOX_WINE_ICD"] + "\" layerPath=\""
-                    + psi.EnvironmentVariables["KHARVOX_WINE_LAYERS"] + "\" hostLayerRequest="
+                    + psi.EnvironmentVariables["KHARVOX_WINE_LAYERS"] + "\" layerRequest="
                     + (psi.EnvironmentVariables["VK_INSTANCE_LAYERS"] ?? "<none>"));
             }
             if (options.ExtendedLogging)
@@ -1728,7 +1728,7 @@ internal static class KharvoxRunner
     // layer DOOM runs flat or quits, with it the [WINE-XR] lines name the step.
     internal static string WineStartupExitHint(bool layerLoaded) => layerLoaded
         ? "\n\nThe KHARVOX layer loaded under Wine/Proton, but VR startup did not complete. See the [WINE-XR] and [XR] lines of KHARVOX.log in %TEMP%."
-        : "\n\nUnder Wine/Proton, KharvoxLayer.dll was never loaded into DOOM. Remove any vulkan-1 DLL override and the VK_INSTANCE_LAYERS / VK_LAYER_PATH variables from the game's launcher settings, restore the prefix's original vulkan-1.dll, and extract the complete build including the wine-loader folder.";
+        : "\n\nUnder Wine/Proton, KharvoxLayer.dll was never loaded into DOOM. Extract the complete build including the wine-loader folder, enable extended logging and send KHARVOX.log from %TEMP%.";
 
     private static bool IsWine()
     {

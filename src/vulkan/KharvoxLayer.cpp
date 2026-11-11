@@ -877,6 +877,7 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice d,const ch
 }
 #undef MATCH
 
+extern "C++" {
 // Under Wine the runtime reports host extension names. winevulkan enables the
 // host-only ones itself and fails a create call that names them.
 template<class Enumerate> void keepWineExposedExtensions(std::vector<std::string>& required,const char* scope,Enumerate enumerate){
@@ -895,6 +896,7 @@ template<class Enumerate> void keepWineExposedExtensions(std::vector<std::string
     for(auto& name:kharvox::removeUnavailableExtensions(required,available))
         logLine(std::string("[WINE-XR] not requesting ")+scope+" extension absent from winevulkan: "+name,true);
 }
+} // extern "C++"
 
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* ci,const VkAllocationCallbacks* a,VkInstance* out){
     if(!ci||!out)return VK_ERROR_INITIALIZATION_FAILED;

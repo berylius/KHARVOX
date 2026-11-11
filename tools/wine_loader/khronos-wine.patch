@@ -1,5 +1,5 @@
 diff --git a/loader/loader.c b/loader/loader.c
-index 53c8be0..723bd52 100644
+index 53c8be0..1553ac9 100644
 --- a/loader/loader.c
 +++ b/loader/loader.c
 @@ -3612,0 +3613,12 @@ VkResult read_data_files_in_search_paths(const struct loader_instance *inst, enu
@@ -14,6 +14,30 @@ index 53c8be0..723bd52 100644
 +        override_env = kharvox_override;
 +        path_overrides = NULL;
 +    }
++#endif
+@@ -8252,0 +8265,23 @@ VkResult loader_filter_enumerated_physical_device_groups(
++
++#if defined(_WIN32)
++// KHARVOX: Wine's OpenXR bridge dereferences winevulkan objects, so the layer
++// must hand it the ICD's handles instead of this loader's wrappers.
++VKAPI_ATTR VkInstance VKAPI_CALL kharvoxWineIcdInstance(VkInstance instance) {
++    struct loader_instance *inst = loader_get_instance(instance);
++    if (NULL == inst || NULL == inst->icd_terms || NULL != inst->icd_terms->next) {
++        return VK_NULL_HANDLE;
++    }
++    return inst->icd_terms->instance;
++}
++
++// Accepts the application's handle or the one layers receive below it.
++VKAPI_ATTR VkPhysicalDevice VKAPI_CALL kharvoxWineIcdPhysicalDevice(VkPhysicalDevice physicalDevice) {
++    if (VK_NULL_HANDLE == physicalDevice) {
++        return VK_NULL_HANDLE;
++    }
++    VkPhysicalDevice unwrapped = loader_unwrap_physical_device(physicalDevice);
++    struct loader_physical_device_term *term =
++        (struct loader_physical_device_term *)(VK_NULL_HANDLE != unwrapped ? unwrapped : physicalDevice);
++    return term->phys_dev;
++}
 +#endif
 diff --git a/loader/loader_windows.c b/loader/loader_windows.c
 index 1701818..2187278 100644
@@ -34,3 +58,11 @@ index 1701818..2187278 100644
 -        dxgi_module == NULL ? NULL : (PFN_CreateDXGIFactory1)(void *)GetProcAddress(dxgi_module, "CreateDXGIFactory1");
 +    // DXVK's DXGI may recursively create a Vulkan instance under Proton.
 +    fpCreateDXGIFactory1 = nr_no_dxgi_factory;
+diff --git a/loader/vulkan-1.def b/loader/vulkan-1.def
+index de598bc..bd0802e 100644
+--- a/loader/vulkan-1.def
++++ b/loader/vulkan-1.def
+@@ -298,0 +299,3 @@ EXPORTS
++
++   kharvoxWineIcdInstance
++   kharvoxWineIcdPhysicalDevice

@@ -219,15 +219,24 @@ next launch recovers it only when its ownership marker and hash match. A
 changed loader is preserved and must be inspected manually. Do not remove the
 marker while the temporary loader is present.
 
-GE-Proton's Wine OpenXR bridge can return Vulkan handles owned by Wine rather
-than by this private loader. This combination is currently incompatible with
-KHARVOX VR, including the observed WiVRn setup. The updated native layer stops
-startup with a diagnostic when it detects the mismatch; this avoids the
-observed access violation but does not yet make VR work under Wine.
+GE-Proton's Wine OpenXR bridge creates `XR_KHR_vulkan_enable2` objects directly
+in `winevulkan`, outside this private loader, and reads `winevulkan` objects
+from every Vulkan handle it receives. Under Wine the layer therefore uses
+`XR_KHR_vulkan_enable`: the loader chain creates the instance and device, and
+the layer passes the bridge the `winevulkan` handles exported by the private
+loader. This path has not yet been confirmed with a headset; the `[WINE-XR]`
+lines in `KHARVOX.log` show how far startup got.
+
+Launcher settings for the game (for example in Heroic) must not set a
+`vulkan-1` DLL override, `VK_INSTANCE_LAYERS`, `VK_LAYER_PATH` or
+`KHARVOX_ENABLE_LAYER`, and the prefix must keep Proton's own `vulkan-1.dll`.
+Keep the OpenXR settings (`openxr_loader=n,b`, `XR_RUNTIME_JSON` and the
+`PRESSURE_VESSEL_*` variables your runtime needs).
 
 For diagnosis, enable extended logging and inspect `KHARVOX.log` and
 `KHARVOX-vulkan-loader-v1.0.log` in the Windows `%TEMP%` directory. A focused
-DOOM window or layer registration alone does not confirm that the layer loaded.
+DOOM window or layer registration alone does not confirm that the layer loaded,
+and a missing DOOM window means DOOM quit or ran without the layer.
 The loader uses Wine's `winevulkan.dll` and is not used on native Windows.
 
 To build the Wine loader separately on Windows, run

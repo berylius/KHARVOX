@@ -140,7 +140,14 @@ inline const char* openXRRuntimeKindName(OpenXRRuntimeKind kind) {
 
 inline OpenXRVulkanPath selectOpenXRVulkanPath(
     OpenXRRuntimeKind runtime, bool mediationRequested,
-    bool supportsVulkanEnable1, bool supportsVulkanEnable2) {
+    bool supportsVulkanEnable1, bool supportsVulkanEnable2,
+    bool wineHandleTranslation = false) {
+    // Wine's OpenXR bridge ignores the application's GetInstanceProcAddr and
+    // creates enable2 objects outside the loader chain that hosts KHARVOX.
+    // With enable1 the layer chain creates them and only handles cross over.
+    if (wineHandleTranslation && supportsVulkanEnable1)
+        return OpenXRVulkanPath::VulkanEnable1Direct;
+
     // Virtual Desktop retains its physically validated callback bridge.
     if (runtime == OpenXRRuntimeKind::VirtualDesktop
         && mediationRequested && supportsVulkanEnable2)

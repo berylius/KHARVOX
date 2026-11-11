@@ -143,7 +143,7 @@ internal sealed class KharvoxLaunchOptions
 
 internal static class KharvoxRunner
 {
-    internal const string BuildId = "2026.10.27-launcher-v1.4a-ofxr-wine1";
+    internal const string BuildId = "2026.10.27-launcher-v1.4a-ofxr-wine2";
     private const string LayerName = "VK_LAYER_KHARVOX_OPENXR";
     private const string RegistryPath = @"SOFTWARE\Khronos\Vulkan\ImplicitLayers";
     private static readonly CultureInfo Invariant = CultureInfo.InvariantCulture;
@@ -626,7 +626,8 @@ internal static class KharvoxRunner
                 }
                 AppendLauncherLog(logPath, "Wine Vulkan private loader staged; ICD=\""
                     + psi.EnvironmentVariables["KHARVOX_WINE_ICD"] + "\" layerPath=\""
-                    + psi.EnvironmentVariables["KHARVOX_WINE_LAYERS"] + "\"");
+                    + psi.EnvironmentVariables["KHARVOX_WINE_LAYERS"] + "\" hostLayerRequest="
+                    + (psi.EnvironmentVariables["VK_INSTANCE_LAYERS"] ?? "<none>"));
             }
             if (options.ExtendedLogging)
                 AppendRegistryDiagnostics(logPath, launchId, "before-process-start", key,
@@ -727,9 +728,9 @@ internal static class KharvoxRunner
                 WaitForStartup(game, logPath, logOffset, TimeSpan.FromSeconds(70),
                     "runtimeDir=" + Path.Combine(runtimeDir, "."),
                     options.ExtendedLogging, launchId));
+            var layerLoadEvidence = LayerLoadEvidence(logPath, Path.Combine(runtimeDir, "."));
             AppendLauncherLog(logPath, "startup result=" + startup
-                + " wine=" + wine + " layerLoadEvidence="
-                + LayerLoadEvidence(logPath, Path.Combine(runtimeDir, ".")));
+                + " wine=" + wine + " layerLoadEvidence=" + layerLoadEvidence);
             if (startup != StartupState.Exited)
                 AppendVulkanModuleDiagnostics(game, logPath, "startup-result");
             if (startup == StartupState.Healthy)
@@ -794,9 +795,7 @@ internal static class KharvoxRunner
             var failureMessage = processExited
                 ? "DOOM exited before a stable VR frame stream was confirmed. Exit code: 0x"
                     + exitCode.GetValueOrDefault().ToString("X8", Invariant) + "."
-                    + (wine
-                        ? "\n\nUnder Wine/Proton, the OpenXR bridge (wineopenxr) returns Vulkan handles that are incompatible with KHARVOX's private Vulkan loader, so VR cannot start yet. Make sure KharvoxLayer.dll is the latest build, then see KHARVOX.log in %TEMP%."
-                        : string.Empty)
+                    + (wine ? WineStartupExitHint(layerLoadEvidence == "observed") : string.Empty)
                 : startup == StartupState.DeviceLost
                     ? "SteamVR lost the Vulkan device during startup. Restart SteamVR and try once more."
                 : startup == StartupState.PresentStreamStalled
@@ -1724,6 +1723,12 @@ internal static class KharvoxRunner
         catch (IOException exception) { return "read-error:" + exception.GetType().Name; }
         catch (UnauthorizedAccessException exception) { return "read-error:" + exception.GetType().Name; }
     }
+
+    // A missing DOOM window is a consequence here, never the cause: without the
+    // layer DOOM runs flat or quits, with it the [WINE-XR] lines name the step.
+    internal static string WineStartupExitHint(bool layerLoaded) => layerLoaded
+        ? "\n\nThe KHARVOX layer loaded under Wine/Proton, but VR startup did not complete. See the [WINE-XR] and [XR] lines of KHARVOX.log in %TEMP%."
+        : "\n\nUnder Wine/Proton, KharvoxLayer.dll was never loaded into DOOM. Remove any vulkan-1 DLL override and the VK_INSTANCE_LAYERS / VK_LAYER_PATH variables from the game's launcher settings, restore the prefix's original vulkan-1.dll, and extract the complete build including the wine-loader folder.";
 
     private static bool IsWine()
     {

@@ -3,6 +3,8 @@
 #include <cstring>
 #include <algorithm>
 #include <iterator>
+#include <string>
+#include <vector>
 
 namespace kharvox {
 inline bool selectXrGraphicsQueue(VkQueue current,VkQueue candidate,VkQueueFlags flags) {
@@ -25,6 +27,19 @@ inline bool wineRuntimeReplacedLoaderInstance(bool wineBridge, bool privateLoade
     VkInstance seeded, VkInstance returned, bool xrSucceeded, VkResult result) {
     return wineBridge && privateLoader && seeded && returned && seeded != returned
         && xrSucceeded && result == VK_SUCCESS;
+}
+// winevulkan adds the host-only extensions an OpenXR runtime needs by itself
+// and rejects their names from Windows callers. Returns the removed names.
+inline std::vector<std::string> removeUnavailableExtensions(
+    std::vector<std::string>& required, const std::vector<VkExtensionProperties>& available) {
+    std::vector<std::string> removed;
+    const auto missing = [&](const std::string& name) {
+        return std::none_of(available.begin(), available.end(),
+            [&](const VkExtensionProperties& e) { return name == e.extensionName; });
+    };
+    for (const auto& name : required) if (missing(name)) removed.push_back(name);
+    required.erase(std::remove_if(required.begin(), required.end(), missing), required.end());
+    return removed;
 }
 inline bool isPhysicalDeviceCommand(const char* name) {
     return name && (!std::strncmp(name, "vkGetPhysicalDevice", 19) ||

@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
@@ -25,6 +26,7 @@
 #include "IndependentEngineSize.h"
 #include "CoreSurfaceWindow.h"
 #include "../openxr/RuntimeVulkanDispatch.h"
+#include "../openxr/WineVulkanBridge.h"
 
 static DWORD portableGetFileAttributesW(LPCWSTR path) {
     const auto name = wcsrchr(path, L'\\');
@@ -875,6 +877,25 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL vkGetDeviceProcAddr(VkDevice d,const ch
 }
 #undef MATCH
 
+// Under Wine the runtime reports host extension names. winevulkan enables the
+// host-only ones itself and fails a create call that names them.
+template<class Enumerate> void keepWineExposedExtensions(std::vector<std::string>& required,const char* scope,Enumerate enumerate){
+    if(!kharvox::runningUnderWine())return;
+    std::string listed;for(auto& name:required)listed+=" "+name;
+    logLine(std::string("[WINE-XR] runtime ")+scope+" extensions:"+(listed.empty()?" <none>":listed),true);
+    uint32_t count{};
+    if(enumerate(&count,nullptr)!=VK_SUCCESS)return;
+    std::vector<VkExtensionProperties> available(count);
+    if(enumerate(&count,available.data())!=VK_SUCCESS)return;
+    available.resize(count);
+    // Proton's VK_WINE_* names are instructions to winevulkan, not always listed.
+    for(auto& name:required)if(!name.compare(0,8,"VK_WINE_")){
+        VkExtensionProperties marker{};std::snprintf(marker.extensionName,sizeof(marker.extensionName),"%s",name.c_str());available.push_back(marker);
+    }
+    for(auto& name:kharvox::removeUnavailableExtensions(required,available))
+        logLine(std::string("[WINE-XR] not requesting ")+scope+" extension absent from winevulkan: "+name,true);
+}
+
 VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* ci,const VkAllocationCallbacks* a,VkInstance* out){
     if(!ci||!out)return VK_ERROR_INITIALIZATION_FAILED;
     // The loader may seed *out with its dispatch object. Preserve it downstream.
@@ -922,7 +943,11 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateInstance(const VkInstanceCreateInfo* ci,c
         }else logLine("Steam-backed auxiliary Vulkan instance passthrough failed result="+std::to_string(auxiliaryResult));
         return auxiliaryResult;
     }
-    KharvoxXRInitialize(VK_NULL_HANDLE);auto required=KharvoxXRRequiredInstanceExtensions();std::vector<const char*> enabled;enabled.reserve(ci->enabledExtensionCount+required.size()+1);for(uint32_t i=0;i<ci->enabledExtensionCount;i++)enabled.push_back(ci->ppEnabledExtensionNames[i]);auto addExtension=[&](const char*name,const char*reason){for(auto*e:enabled)if(!std::strcmp(e,name))return;enabled.push_back(name);logLine(std::string("Enabling ")+reason+" instance extension "+name);};for(auto&name:required)addExtension(name.c_str(),"XR");
+    KharvoxXRInitialize(VK_NULL_HANDLE);auto required=KharvoxXRRequiredInstanceExtensions();
+    keepWineExposedExtensions(required,"instance",[&](uint32_t* count,VkExtensionProperties* properties){
+        auto enumerate=reinterpret_cast<PFN_vkEnumerateInstanceExtensionProperties>(nextGipa(nullptr,"vkEnumerateInstanceExtensionProperties"));
+        return enumerate?enumerate(nullptr,count,properties):VK_ERROR_INITIALIZATION_FAILED;});
+    std::vector<const char*> enabled;enabled.reserve(ci->enabledExtensionCount+required.size()+1);for(uint32_t i=0;i<ci->enabledExtensionCount;i++)enabled.push_back(ci->ppEnabledExtensionNames[i]);auto addExtension=[&](const char*name,const char*reason){for(auto*e:enabled)if(!std::strcmp(e,name))return;enabled.push_back(name);logLine(std::string("Enabling ")+reason+" instance extension "+name);};for(auto&name:required)addExtension(name.c_str(),"XR");
     // Runtime auxiliary instances returned above retain untouched WSI.
     bool independent=kharvox::headsetSizedSource(kharvox::vulkanSfsEnabled(),kharvox::sfs::nativeProbeEnabled(),kharvox::sfs::vrEnabled());
     bool coreSurface=false;
@@ -1007,6 +1032,9 @@ VKAPI_ATTR VkResult VKAPI_CALL vkCreateDevice(VkPhysicalDevice p,const VkDeviceC
     }
     if(KharvoxXRMediationReentry()){auto mapped=KharvoxXRMappedPhysicalForReentry();auto create=KharvoxXRCreateDeviceForReentry();logLine("XR internal vkCreateDevice reentry -> original next layer with mapped physical");return create?create(mapped?mapped:p,ci,a,out):VK_ERROR_INITIALIZATION_FAILED;}
     auto required=KharvoxXRRequiredDeviceExtensions();
+    keepWineExposedExtensions(required,"device",[&](uint32_t* count,VkExtensionProperties* properties){
+        return physicalDispatch.enumerateDeviceExtensionProperties
+            ?physicalDispatch.enumerateDeviceExtensionProperties(p,nullptr,count,properties):VK_ERROR_INITIALIZATION_FAILED;});
     logLine("vkCreateDevice: XR extension query complete");
     std::vector<const char*> enabled;
     enabled.reserve(ci->enabledExtensionCount+required.size()+3);

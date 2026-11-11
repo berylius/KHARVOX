@@ -1,4 +1,5 @@
 #include "../src/openxr/RuntimeVulkanDispatch.h"
+#include <cstdio>
 #include <cstdlib>
 #include <iostream>
 
@@ -50,6 +51,14 @@ int main() {
     VkDevice empty{};VkResult staleSuccess=VK_SUCCESS;
     finishRuntimeVulkanCreate(true,&staleSuccess,&empty);
     require(staleSuccess==VK_ERROR_INITIALIZATION_FAILED && !empty);
+
+    std::vector<VkExtensionProperties> exposed(2);
+    std::snprintf(exposed[0].extensionName,sizeof(exposed[0].extensionName),"VK_KHR_surface");
+    std::snprintf(exposed[1].extensionName,sizeof(exposed[1].extensionName),"VK_KHR_external_memory");
+    std::vector<std::string> wanted{"VK_KHR_external_memory_fd","VK_KHR_surface","VK_KHR_xlib_surface","VK_KHR_external_memory"};
+    const auto removed=removeUnavailableExtensions(wanted,exposed);
+    require(wanted==std::vector<std::string>{"VK_KHR_surface","VK_KHR_external_memory"});
+    require(removed==std::vector<std::string>{"VK_KHR_external_memory_fd","VK_KHR_xlib_surface"});
 
     auto seed=reinterpret_cast<VkInstance>(uintptr_t(17));
     auto foreign=reinterpret_cast<VkInstance>(uintptr_t(18));

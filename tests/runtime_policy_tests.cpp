@@ -52,6 +52,10 @@ int main() {
         != OpenXRVulkanPath::VulkanEnable2VirtualDesktopBridge) return 7;
     if (selectOpenXRVulkanPath(OpenXRRuntimeKind::Unknown, false, false, false)
         != OpenXRVulkanPath::None) return 8;
+    if (selectOpenXRVulkanPath(OpenXRRuntimeKind::Unknown, false, true, true, true)
+        != OpenXRVulkanPath::VulkanEnable1Direct) return 9;
+    if (selectOpenXRVulkanPath(OpenXRRuntimeKind::Unknown, false, false, true, true)
+        != OpenXRVulkanPath::VulkanEnable2RuntimeManaged) return 10;
 
     if (!useCenteredProjectionFov(OpenXRRuntimeKind::VirtualDesktop)) return 127;
     if (useCenteredProjectionFov(OpenXRRuntimeKind::MetaOculus)) return 128;

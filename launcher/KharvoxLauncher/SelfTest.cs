@@ -796,7 +796,19 @@ internal static class SelfTest
         {
             var startInfo = new System.Diagnostics.ProcessStartInfo();
             startInfo.EnvironmentVariables["WINEDLLOVERRIDES"] = "foo,vulkan-1=b;bar=n;VULKAN-1=b";
+            startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] = "VK_LAYER_KHARVOX_OPENXR";
+            startInfo.EnvironmentVariables["VK_LAYER_PATH"] = "/home/user/KHARVOX/";
             lease.Configure(startInfo, runtime);
+            Require(startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] is null
+                && startInfo.EnvironmentVariables["VK_LAYER_PATH"] is null,
+                "a manually forced KHARVOX layer is not passed to the host Vulkan loader");
+            startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] = "VK_LAYER_other:VK_LAYER_KHARVOX_OPENXR";
+            startInfo.EnvironmentVariables["VK_LAYER_PATH"] = "/other";
+            Require(WineVulkanLoader.RemoveForcedKharvoxLayer(startInfo)
+                && startInfo.EnvironmentVariables["VK_INSTANCE_LAYERS"] == "VK_LAYER_other"
+                && startInfo.EnvironmentVariables["VK_LAYER_PATH"] == "/other",
+                "unrelated forced layers keep their search path");
+            Require(!WineVulkanLoader.RemoveForcedKharvoxLayer(startInfo), "unrelated layer requests are left alone");
             Require(startInfo.EnvironmentVariables["WINEDLLOVERRIDES"] == "foo=b;bar=n;vulkan-1=n",
                 "Wine overrides preserve unrelated DLLs and replace existing Vulkan entries");
             Require(Environment.GetEnvironmentVariable("WINEDLLOVERRIDES") == previousOverride,
